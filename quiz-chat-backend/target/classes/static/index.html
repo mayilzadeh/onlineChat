@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="az">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Java Quiz & Chat</title>
+    <!-- SockJS və STOMP -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.6.1/sockjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+
+    <style>
+        /* Göz yormayan, dərin mavi/göy tonları */
+        :root {
+            --bg-color: #0f172a;       /* Çox tünd göy (gecə rejimi) */
+            --panel-bg: #1e293b;       /* Tünd göy panel */
+            --primary: #0ea5e9;        /* Parlaq göy (Sky Blue) */
+            --primary-hover: #0284c7;  /* Tünd göy hover */
+            --cyan: #06b6d4;           /* Göy (Cyan) */
+            --text-main: #f8fafc;      /* Ağ mətn */
+            --text-muted: #94a3b8;     /* Boz mətn */
+            --success: #10b981;        /* Yaşıl (düzgün cavab üçün) */
+            --danger: #ef4444;         /* Qırmızı (səhv cavab üçün) */
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            overflow: hidden;
+            background-image: radial-gradient(circle at 50% 0%, #1e3a8a 0%, transparent 70%);
+        }
+
+        /* Əsas Konteyner */
+        .container {
+            display: flex;
+            gap: 20px;
+            width: 95vw;
+            max-width: 1200px;
+            height: 90vh;
+        }
+
+        /* Ümumi Panel Stili */
+        .panel {
+            background: var(--panel-bg);
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.05);
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Sol tərəf: Viktorina */
+        .quiz-section {
+            flex: 2;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            position: relative;
+        }
+
+        /* Sağ tərəf: Çat */
+        .chat-section {
+            flex: 1;
+            min-width: 300px;
+        }
+
+        /* Düymələr */
+        button {
+            background: linear-gradient(135deg, var(--primary), var(--cyan));
+            color: #fff;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            box-shadow: 0 4px 15px rgba(14, 165, 233, 0.3);
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(14, 165, 233, 0.5);
+        }
+
+        button:disabled {
+            background: #475569;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        /* Giriş Ekranı */
+        .login-box {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin: auto;
+            width: 100%;
+            max-width: 400px;
+            text-align: center;
+        }
+
+        input {
+            background: #0f172a;
+            border: 2px solid #334155;
+            color: white;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 16px;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+
+        input:focus { border-color: var(--cyan); }
+
+        /* Sual və Cavablar */
+        .question-header {
+            display: flex;
+            justify-content: space-between;
+            color: var(--cyan);
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .question-text {
+            font-size: 24px;
+            margin-bottom: 30px;
+            line-height: 1.4;
+            text-align: center;
+            text-shadow: 0 2px 10px rgba(6, 182, 212, 0.2);
+        }
+
+        .options-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+
+        .option-btn {
+            background: #1e293b;
+            border: 2px solid #334155;
+            color: white;
+            padding: 20px;
+            border-radius: 12px;
+            font-size: 18px;
+            text-align: left;
+            transition: all 0.2s;
+            box-shadow: none;
+        }
+
+        .option-btn:hover:not(:disabled) {
+            border-color: var(--primary);
+            background: #0f172a;
+        }
+
+        .option-btn.correct {
+            background: rgba(16, 185, 129, 0.2);
+            border-color: var(--success);
+            color: var(--success);
+        }
+
+        .option-btn.wrong {
+            background: rgba(239, 68, 68, 0.2);
+            border-color: var(--danger);
+            color: var(--danger);
+        }
+
+        /* Çat Stili */
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 15px;
+            padding-right: 5px;
+        }
+
+        .chat-messages::-webkit-scrollbar { width: 6px; }
+        .chat-messages::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+
+        .message {
+            background: #0f172a;
+            padding: 10px 14px;
+            border-radius: 8px;
+            border-left: 4px solid var(--primary);
+            font-size: 14px;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .message span { color: var(--cyan); font-weight: bold; display: block; margin-bottom: 4px; font-size: 12px; }
+
+        .chat-input-box {
+            display: flex;
+            gap: 10px;
+        }
+
+        .chat-input-box input { flex: 1; padding: 10px; }
+
+        /* Xal Lövhəsi */
+        .scoreboard {
+            display: flex;
+            justify-content: space-around;
+            background: #0f172a;
+            padding: 15px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            border: 1px solid #334155;
+        }
+
+        .player-score { text-align: center; }
+        .player-name { color: var(--text-muted); font-size: 14px; }
+        .player-points { color: var(--primary); font-size: 28px; font-weight: bold; }
+
+        /* Animasiyalar */
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        .hidden { display: none !important; }
+
+        .status-badge {
+            position: absolute;
+            top: 24px;
+            right: 24px;
+            font-size: 12px;
+            padding: 4px 10px;
+            border-radius: 20px;
+            background: rgba(6, 182, 212, 0.2);
+            color: var(--cyan);
+            border: 1px solid var(--cyan);
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <!-- SOL TƏRƏF: OYUN -->
+    <div class="panel quiz-section">
+        <div id="statusBadge" class="status-badge hidden">Qoşulub</div>
+
+        <!-- Giriş Ekranı -->
+        <div id="loginScreen" class="login-box">
+            <h1 style="color: var(--cyan); margin-bottom: 10px;">Java Quiz</h1>
+            <p style="color: var(--text-muted); margin-bottom: 20px;">Real vaxt rejimində dostunla yarış!</p>
+            <input type="text" id="usernameInput" placeholder="Adını yaz...">
+            <input type="text" id="roomInput" placeholder="Otaq Kodu (məs: otaq1)">
+            <button onclick="createRoom()">Otaq Yarat</button>
+            <button onclick="joinRoom()" style="background: transparent; border: 2px solid var(--cyan); color: var(--cyan);">Otağa Qoşul</button>
+        </div>
+
+        <!-- Oyun Ekranı -->
+        <div id="gameScreen" class="hidden" style="flex: 1; display: flex; flex-direction: column;">
+            <!-- Xal Lövhəsi -->
+            <div class="scoreboard">
+                <div class="player-score">
+                    <div class="player-name" id="p1Name">Gözlənilir...</div>
+                    <div class="player-points" id="p1Score">0</div>
+                </div>
+                <div style="display: flex; align-items: center; color: var(--text-muted); font-weight: bold;">VS</div>
+                <div class="player-score">
+                    <div class="player-name" id="p2Name">Gözlənilir...</div>
+                    <div class="player-points" id="p2Score">0</div>
+                </div>
+            </div>
+
+            <!-- Sual Hissəsi -->
+            <div id="questionArea" class="hidden" style="flex: 1; display: flex; flex-direction: column; justify-content: center;">
+                <div class="question-header">
+                    <span id="questionProgress">Sual 1/5</span>
+                    <span id="timerText" style="color: #ef4444;">15s</span>
+                </div>
+                <div class="question-text" id="questionText">Sual yüklənir...</div>
+                <div class="options-grid" id="optionsGrid">
+                    <!-- Cavablar JS ilə yerləşdiriləcək -->
+                </div>
+            </div>
+
+            <!-- Gözləmə Ekranı -->
+            <div id="waitingArea" style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;">
+                <h2 style="color: var(--cyan); margin-bottom: 10px;">Dostun gözlənilir...</h2>
+                <p style="color: var(--text-muted);">Otaq kodu: <strong id="displayRoomId" style="color: white; font-size: 20px;"></strong></p>
+                <p style="color: var(--text-muted); margin-top: 10px; font-size: 14px;">Dostun bu kodu daxil edərək qoşulmalıdır.</p>
+            </div>
+        </div>
+
+        <!-- Oyun Bitdi Ekranı -->
+        <div id="gameOverScreen" class="hidden" style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;">
+            <h1 style="color: var(--cyan); margin-bottom: 20px; font-size: 36px;">Oyun Bitdi!</h1>
+            <h2 id="winnerText" style="margin-bottom: 30px; color: #10b981;">Qalib: ...</h2>
+            <button onclick="location.reload()">Yenidən Oyna</button>
+        </div>
+    </div>
+
+    <!-- SAĞ TƏRƏF: ÇAT -->
+    <div class="panel chat-section">
+        <h3 style="margin-bottom: 15px; color: var(--cyan); display: flex; align-items: center; gap: 8px;">
+            <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
+            Çat
+        </h3>
+        <div class="chat-messages" id="chatMessages">
+            <!-- Mesajlar bura gələcək -->
+        </div>
+        <div class="chat-input-box">
+            <input type="text" id="chatInput" placeholder="Mesaj yaz..." onkeypress="handleChatEnter(event)">
+            <button onclick="sendMessage()" style="padding: 10px 15px;">➤</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Dəyişənlər
+    let stompClient = null;
+    let currentUser = null;
+    let currentRoom = null;
+    let timerInterval = null;
+    let questionStartTime = 0;
+    let currentQuestionId = 0;
+    let isHost = false;
+
+    // Tətbiq başlayanda
+    window.onload = () => {
+        // URL-dən parametrləri oxuya bilərik, amma sadəlik üçün session storage istifadə edirik
+    };
+
+    // WebSocket qoşulması
+    function connectWebSocket(onConnected) {
+        const socket = new SockJS('/ws');
+        stompClient = Stomp.over(socket);
+        stompClient.debug = null; // Konsolu təmiz saxla
+
+        stompClient.connect({}, function (frame) {
+            document.getElementById('statusBadge').classList.remove('hidden');
+
+            // Fərdi mesajları dinlə
+            stompClient.subscribe('/queue/messages/' + currentUser, function (msg) {
+                const message = JSON.parse(msg.body);
+                addChatMessage(message.from, message.content);
+            });
+
+            // Otaq mesajlarını dinlə
+            if (currentRoom) {
+                stompClient.subscribe('/topic/chat/' + currentRoom, function (msg) {
+                    const message = JSON.parse(msg.body);
+                    if (message.from !== currentUser) {
+                        addChatMessage(message.from, message.content);
+                    }
+                });
+
+                // Oyun vəziyyətini dinlə
+                stompClient.subscribe('/game/' + currentRoom, function (msg) {
+                    const state = JSON.parse(msg.body);
+                    handleGameState(state);
+                });
+            }
+
+            if (onConnected) onConnected();
+        }, function(error) {
+            console.error("WebSocket xətası:", error);
+            alert("Serverə qoşulmaq mümkün olmadı. Serverin işlədiyinə əmin olun.");
+        });
+    }
+
+    // Otaq yaratmaq
+    async function createRoom() {
+        const username = document.getElementById('usernameInput').value.trim();
+        const roomId = document.getElementById('roomInput').value.trim();
+
+        if (!username || !roomId) return alert("Ad və otaq kodu lazımdır!");
+
+        currentUser = username;
+        currentRoom = roomId;
+        isHost = true;
+
+        try {
+            const res = await fetch('/api/quiz/create', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ roomId: roomId, host: username })
+            });
+
+            if (!res.ok) throw new Error("Otaq yaradıla bilmədi. Ola bilsin bu adda otaq var.");
+
+            document.getElementById('loginScreen').classList.add('hidden');
+            document.getElementById('gameScreen').classList.remove('hidden');
+            document.getElementById('displayRoomId').innerText = roomId;
+            document.getElementById('p1Name').innerText = username;
+
+            connectWebSocket();
+        } catch (e) {
+            alert(e.message);
+        }
+    }
+
+    // Otağa qoşulmaq
+    async function joinRoom() {
+        const username = document.getElementById('usernameInput').value.trim();
+        const roomId = document.getElementById('roomInput').value.trim();
+
+        if (!username || !roomId) return alert("Ad və otaq kodu lazımdır!");
+
+        currentUser = username;
+        currentRoom = roomId;
+
+        try {
+            const res = await fetch('/api/quiz/join', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ roomId: roomId, username: username })
+            });
+
+            if (!res.ok) throw new Error("Otağa qoşulmaq alınmadı. Otağın adını yoxlayın.");
+
+            document.getElementById('loginScreen').classList.add('hidden');
+            document.getElementById('gameScreen').classList.remove('hidden');
+            document.getElementById('displayRoomId').innerText = roomId;
+            document.getElementById('p2Name').innerText = username;
+
+            connectWebSocket();
+        } catch (e) {
+            alert(e.message);
+        }
+    }
+
+    // Oyun vəziyyətini idarə et
+    function handleGameState(state) {
+        // Xalları yenilə
+        if (state.players) {
+            if (state.players[0]) {
+                document.getElementById('p1Name').innerText = state.players[0].username;
+                document.getElementById('p1Score').innerText = state.players[0].score;
+            }
+            if (state.players[1]) {
+                document.getElementById('p2Name').innerText = state.players[1].username;
+                document.getElementById('p2Score').innerText = state.players[1].score;
+            }
+        }
+
+        if (state.type === 'WAITING') {
+            // Gözləmə vəziyyəti
+        }
+        else if (state.type === 'QUESTION') {
+            document.getElementById('waitingArea').classList.add('hidden');
+            document.getElementById('gameOverScreen').classList.add('hidden');
+            document.getElementById('questionArea').classList.remove('hidden');
+
+            showQuestion(state.question, state.questionIndex, state.totalQuestions);
+        }
+        else if (state.type === 'SCORE_UPDATE') {
+            // Xal yenilənməsi, heç nə etməyə ehtiyac yoxdur, yuxarıda yeniləndi
+        }
+        else if (state.type === 'GAME_OVER') {
+            clearInterval(timerInterval);
+            document.getElementById('questionArea').classList.add('hidden');
+            document.getElementById('gameOverScreen').classList.remove('hidden');
+            document.getElementById('winnerText').innerText = state.message;
+        }
+    }
+
+    // Sualı göstər
+    function showQuestion(question, index, total) {
+        currentQuestionId = question.id;
+        questionStartTime = Date.now();
+
+        document.getElementById('questionProgress').innerText = `Sual ${index}/${total}`;
+        document.getElementById('questionText').innerText = question.text;
+
+        const grid = document.getElementById('optionsGrid');
+        grid.innerHTML = '';
+
+        question.options.forEach((opt, i) => {
+            const btn = document.createElement('button');
+            btn.className = 'option-btn';
+            btn.innerText = opt;
+            btn.onclick = () => submitAnswer(i, btn);
+            grid.appendChild(btn);
+        });
+
+        // Timer
+        clearInterval(timerInterval);
+        let timeLeft = question.timeLimitSeconds;
+        document.getElementById('timerText').innerText = timeLeft + 's';
+
+        timerInterval = setInterval(() => {
+            timeLeft--;
+            document.getElementById('timerText').innerText = timeLeft + 's';
+            if (timeLeft <= 0) {
+                clearInterval(timerInterval);
+                disableOptions();
+            }
+        }, 1000);
+    }
+
+    // Cavabı göndər
+    function submitAnswer(selectedIndex, btnElement) {
+        clearInterval(timerInterval);
+        const responseTime = Date.now() - questionStartTime;
+
+        // Bütün düymələri blokla
+        disableOptions();
+        btnElement.style.borderColor = 'var(--primary)'; // Seçildiyini göstər
+
+        const answer = {
+            roomId: currentRoom,
+            username: currentUser,
+            questionId: currentQuestionId,
+            selectedIndex: selectedIndex,
+            responseTimeMs: responseTime
+        };
+
+        stompClient.send("/app/quiz/answer", {}, JSON.stringify(answer));
+    }
+
+    function disableOptions() {
+        document.querySelectorAll('.option-btn').forEach(b => b.disabled = true);
+    }
+
+    // Çat funksiyaları
+    function sendMessage() {
+        const input = document.getElementById('chatInput');
+        const text = input.value.trim();
+        if (!text || !stompClient) return;
+
+        const msg = { from: currentUser, content: text };
+
+        // Əgər otaq varsa otağa göndər, yoxdursa fərdi (amma hazırda otaq məcburidir)
+        if (currentRoom) {
+            stompClient.send("/app/chat.room/" + currentRoom, {}, JSON.stringify(msg));
+            addChatMessage(currentUser, text); // Öz mesajımızı dərhal göstər
+        } else {
+            // Fərdi mesajlaşma (əgər gələcəkdə lazım olsa)
+        }
+
+        input.value = '';
+    }
+
+    function handleChatEnter(e) {
+        if (e.key === 'Enter') sendMessage();
+    }
+
+    function addChatMessage(sender, text) {
+        const box = document.getElementById('chatMessages');
+        const div = document.createElement('div');
+        div.className = 'message';
+        div.innerHTML = `<span>${sender}</span>${text}`;
+        box.appendChild(div);
+        box.scrollTop = box.scrollHeight;
+    }
+</script>
+</body>
+</html>
